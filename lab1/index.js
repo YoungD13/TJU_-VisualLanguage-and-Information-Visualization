@@ -1,108 +1,182 @@
-async function drawChart() {
-    const data = await d3.json('./data/weather.json');
+async function updatingBars() {
+  const dataset = await d3.json('./data/weather.json');
 
-    const metrics = [
-        'windSpeed',
-        'moonPhase',
-        'dewPoint',
-        'humidity',
-        'uvIndex',
-        'windBearing',
-        'temperatureMin',
-        'temperatureMax',
-    ];
-    let currentMetricIndex = 0;
+  const width = 600;
+  let dimensions = {
+    width: width,
+    height: width * 0.6,
+    margin: {
+      top: 30,
+      right: 10,
+      bottom: 90, // 增加底部空间以容纳标签
+      left: 50,
+    },
+  };
+  dimensions.boundedWidth =
+    dimensions.width - dimensions.margin.left - dimensions.margin.right;
+  dimensions.boundedHeight =
+    dimensions.height - dimensions.margin.top - dimensions.margin.bottom;
 
-    const width = 600;
-    const height = 400;
-    const margin = { top: 20, right: 30, bottom: 50, left: 40 };
+  const wrapper = d3
+    .select('#wrapper')
+    .append('svg')
+    .attr('width', dimensions.width)
+    .attr('height', dimensions.height);
 
-    const svg = d3.select('#wrapper')
-        .append('svg')
-        .attr('width', width)
-        .attr('height', height);
+  const bounds = wrapper
+    .append('g')
+    .style(
+      'transform',
+      `translate(${dimensions.margin.left}px, ${dimensions.margin.top}px)`
+    );
 
-    const xAxisGroup = svg.append('g')
-        .attr('transform', `translate(0, ${height - margin.bottom})`);
+  bounds.append('g').attr('class', 'bins');
+  bounds
+    .append('g')
+    .attr('class', 'x-axis')
+    .style('transform', `translateY(${dimensions.boundedHeight}px)`)
+    .append('text')
+    .attr('class', 'x-axis-label')
+    .attr('x', dimensions.boundedWidth / 2)
+    .attr('y', dimensions.margin.bottom - 10);
 
-    const yAxisGroup = svg.append('g')
-        .attr('transform', `translate(${margin.left}, 0)`);
+  const tooltip = d3.select('body')
+    .append('div')
+    .attr('id', 'tooltip');
 
-    const tooltip = d3.select('#wrapper')
-        .append('div')
-        .attr('id', 'tooltip');
+  // 添加标签元素
+  const metricLabel = wrapper
+    .append('text')
+    .attr('id', 'metric-label')
+    .attr('x', dimensions.width / 2)
+    .attr('y', dimensions.height - 20) // 标签位置在柱状图下方
+    .attr('text-anchor', 'middle')
+    .style('font-size', '16px')
+    .style('fill', 'black');
 
-    const render = (metric) => {
-        const values = data.map(d => d[metric]);
-        const bins = d3.bin().thresholds(10)(values);
+  const drawHistogram = (metric) => {
+    const metricAccessor = (d) => d[metric];
+    const yAccessor = (d) => d.length;
 
-        const xScale = d3.scaleLinear()
-            .domain([bins[0].x0, bins[bins.length - 1].x1])
-            .range([margin.left, width - margin.right]);
+    const xScale = d3
+      .scaleLinear()
+      .domain(d3.extent(dataset, metricAccessor))
+      .range([0, dimensions.boundedWidth])
+      .nice();
 
-        const yScale = d3.scaleLinear()
-            .domain([0, d3.max(bins, d => d.length)])
-            .range([height - margin.bottom, margin.top]);
+    const binsGenerator = d3
+      .histogram()
+      .domain(xScale.domain())
+      .value(metricAccessor)
+      .thresholds(12);
 
-        const bars = svg.selectAll('.bar')
-            .data(bins);
+    const bins = binsGenerator(dataset);
 
-        // Exit transition for removed bars
-        bars.exit()
-            .transition()
-            .duration(600)
-            .attr('y', height - margin.bottom)
-            .attr('height', 0)
-            .attr('fill', 'red')
-            .remove();
+    const yScale = d3
+      .scaleLinear()
+      .domain([0, d3.max(bins, yAccessor)])
+      .range([dimensions.boundedHeight, 0])
+      .nice();
 
-        // Enter transition for new bars
-        const newBars = bars.enter()
-            .append('rect')
-            .attr('class', 'bar')
-            .attr('x', d => xScale(d.x0))
-            .attr('y', height - margin.bottom)
-            .attr('width', d => xScale(d.x1) - xScale(d.x0) - 1)
-            .attr('height', 0)
-            .attr('fill', 'yellowgreen');
+    const barPadding = 1;
 
-        newBars.merge(bars)
-            .transition()
-            .duration(600)
-            .attr('x', d => xScale(d.x0))
-            .attr('y', d => yScale(d.length))
-            .attr('width', d => xScale(d.x1) - xScale(d.x0) - 1)
-            .attr('height', d => height - margin.bottom - yScale(d.length))
-            .attr('fill', 'steelblue');
+    const exitTransition = d3.transition().duration(600);
+    const updateTransition = exitTransition.transition().duration(600);
 
-        // Add mouse interaction
-        svg.selectAll('.bar')
-            .on('mouseover', (event, d) => {
-                d3.select(event.target).attr('fill', 'orange');
-                tooltip.style('opacity', 1)
-                    .style('left', `${event.pageX}px`)
-                    .style('top', `${event.pageY - 30}px`)
-                    .html(`${d.length} days`);
-            })
-            .on('mouseout', (event) => {
-                d3.select(event.target).attr('fill', 'steelblue');
-                tooltip.style('opacity', 0);
-            });
+    let binGroups = bounds.select('.bins').selectAll('.bin').data(bins);
 
-        // Update axes
-        const xAxis = d3.axisBottom(xScale);
-        xAxisGroup.transition().duration(600).call(xAxis);
+    const oldBinGroups = binGroups.exit();
 
-        const yAxis = d3.axisLeft(yScale);
-        yAxisGroup.transition().duration(600).call(yAxis);
-    };
+    oldBinGroups.selectAll('rect')
+      .style('fill', 'red')
+      .transition(exitTransition)
+      .attr('y', dimensions.boundedHeight)
+      .attr('height', 0);
 
-    render(metrics[currentMetricIndex]);
+    oldBinGroups.selectAll('text')
+      .transition(exitTransition)
+      .attr('y', dimensions.boundedHeight);
 
-    d3.select('#change-metric').on('click', () => {
-        currentMetricIndex = (currentMetricIndex + 1) % metrics.length;
-        render(metrics[currentMetricIndex]);
-    });
+    oldBinGroups.transition(exitTransition).remove();
+
+    const newBinGroups = binGroups.enter().append('g').attr('class', 'bin');
+
+    newBinGroups
+      .append('rect')
+      .attr('height', 0)
+      .attr('x', (d) => xScale(d.x0) + barPadding)
+      .attr('y', dimensions.boundedHeight)
+      .attr('width', (d) =>
+        d3.max([0, xScale(d.x1) - xScale(d.x0) - barPadding])
+      )
+      .style('fill', 'yellowgreen');
+
+    newBinGroups
+      .append('text')
+      .attr('x', (d) => xScale(d.x0) + (xScale(d.x1) - xScale(d.x0)) / 2)
+      .attr('y', dimensions.boundedHeight);
+
+    binGroups = newBinGroups.merge(binGroups);
+
+    binGroups
+      .select('rect')
+      .transition(updateTransition)
+      .attr('x', (d) => xScale(d.x0) + barPadding)
+      .attr('y', (d) => yScale(yAccessor(d)))
+      .attr('height', (d) => dimensions.boundedHeight - yScale(yAccessor(d)))
+      .attr('width', (d) =>
+        d3.max([0, xScale(d.x1) - xScale(d.x0) - barPadding])
+      )
+      .transition()
+      .style('fill', 'cornflowerblue');
+
+    binGroups
+      .selectAll('rect')
+      .on('mouseover', onMouseEnter)
+      .on('mouseleave', onMouseLeave);
+
+    function onMouseEnter(event, d) {
+      d3.select(this).style('fill', 'orange');
+      tooltip
+        .style('left', `${event.pageX}px`)
+        .style('top', `${event.pageY - 30}px`)
+        .style('opacity', 1.0)
+        .html(`${d.length} days`);
+    }
+
+    function onMouseLeave() {
+      d3.select(this).style('fill', 'cornflowerblue');
+      tooltip.style('opacity', 0.0);
+    }
+
+    const xAxisGenerator = d3.axisBottom().scale(xScale);
+    bounds.select('.x-axis').transition(updateTransition).call(xAxisGenerator);
+
+    bounds.select('.x-axis-label').text(metric);
+
+    // 更新标签内容
+    metricLabel.text(metric);
+  };
+
+  const metrics = [
+    'windSpeed',
+    'moonPhase',
+    'dewPoint',
+    'humidity',
+    'uvIndex',
+    'windBearing',
+    'temperatureMin',
+    'temperatureMax',
+  ];
+  let selectedMetricIndex = 0;
+  drawHistogram(metrics[selectedMetricIndex]);
+
+  const button = d3.select('#change-metric').text('Change metric');
+
+  button.node().addEventListener('click', () => {
+    selectedMetricIndex = (selectedMetricIndex + 1) % metrics.length;
+    drawHistogram(metrics[selectedMetricIndex]);
+  });
 }
 
-drawChart();
+updatingBars();
