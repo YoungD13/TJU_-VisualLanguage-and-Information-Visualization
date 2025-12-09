@@ -22,15 +22,18 @@
   "dependencies": {
     "@ant-design/pro-layout": "^6.5.0",
     "@types/d3": "^7.4.3",
-    "antd": "^4.23.2",
+    "antd": "^5.22.7",
     "csv-loader": "^3.0.5",
-    "d3": "^7.6.1",
+    "d3": "^7.9.0",
+    "d3-cloud": "^1.2.7",
+    "d3-tip": "^0.9.1",
     "react": "17.x",
     "react-dom": "17.x",
     "umi": "^3.5.34",
     "umi-request": "^1.4.0"
   },
   "devDependencies": {
+    "@types/d3-cloud": "^1.2.9",
     "@types/react": "^17.0.0",
     "@types/react-dom": "^17.0.0",
     "@umijs/preset-react": "1.x",
@@ -39,5 +42,8 @@
     "prettier": "^2.2.0",
     "typescript": "^4.1.2",
     "yorkie": "^2.0.0"
+  },
+  "resolutions": {
+    "chokidar": "3.5.1"
   }
 }
