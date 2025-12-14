@@ -1,4 +1,3 @@
-// Filter.tsx
 import React, { useState, useMemo } from 'react';
 import { Input, Button, Select } from 'antd';
 // 假设您的 vispubs.json 位于正确路径
@@ -23,11 +22,19 @@ const Filter: React.FC<FilterProps> = ({ onFilterChange, onFilterReset }) => {
     // 核心修复：过滤掉 null, undefined, 或空字符串的选项
     const { conferences, awards } = useMemo(() => {
         const confs = [
-            ...new Set(vispubsData.map((item) => item.Conference)),
+            ...new Set(
+                Array.isArray(vispubsData)
+                    ? vispubsData.map((item) => item.Conference)
+                    : [],
+            ),
         ].filter((c) => c && c !== '');
-        const awds = [...new Set(vispubsData.map((item) => item.Award))].filter(
-            (a) => a && a !== '',
-        );
+        const awds = [
+            ...new Set(
+                Array.isArray(vispubsData)
+                    ? vispubsData.map((item) => item.Award)
+                    : [],
+            ),
+        ].filter((a) => a && a !== '');
         return { conferences: confs, awards: awds };
     }, []);
 
@@ -116,7 +123,7 @@ const Filter: React.FC<FilterProps> = ({ onFilterChange, onFilterReset }) => {
                     allowClear
                 >
                     {awards.map((awd) => (
-                        <Option key={awd} value={awd}>
+                        <Option key={awd as string} value={awd as string}>
                             {awd}
                         </Option>
                     ))}

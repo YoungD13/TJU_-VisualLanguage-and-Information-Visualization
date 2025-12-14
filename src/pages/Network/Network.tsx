@@ -1,4 +1,3 @@
-// Network.tsx
 import React, {
     useEffect,
     useRef,
@@ -8,7 +7,6 @@ import React, {
 } from 'react';
 import * as d3 from 'd3';
 import { Button } from 'antd';
-// 假设 author_network.json 包含 nodes: {id, paper: [paper_ids...]}, links: {source, target, value}
 import networkData from '../../../public/data/author_network.json';
 
 interface NetworkProps {
@@ -25,7 +23,6 @@ type NodeDatum = {
     paper: any[]; // 该作者的所有论文列表（DOI数组）
     x: number;
     y: number;
-    // ... 其他属性
 };
 
 type LinkDatum = {
@@ -39,12 +36,14 @@ type LinkDatum = {
 const preProcessedNetworkData = (AU_SIZE: number) => {
     const networkDataTyped = networkData as { nodes: any[]; links: any[] };
     // 1. 节点数据初始化：随机生成 x/y 坐标
-    const nodes: NodeDatum[] = networkDataTyped.nodes.map((d: any) => ({
-        ...d,
-        paper: d.paper || [],
-        x: Math.random() * (AU_SIZE - 200) + 100, // 确保在边界内
-        y: Math.random() * (AU_SIZE - 200) + 100,
-    }));
+    const nodes: NodeDatum[] = networkDataTyped.nodes.map(
+        (d: any, i: number) => ({
+            ...d,
+            paper: d.paper || [],
+            x: (i % 10) * 100 + 100, // 固定网格布局，避免随机
+            y: Math.floor(i / 10) * 100 + 100,
+        }),
+    );
 
     // 2. 创建 ID 到节点的映射
     const nodeMap = new Map(nodes.map((d) => [d.id, d]));

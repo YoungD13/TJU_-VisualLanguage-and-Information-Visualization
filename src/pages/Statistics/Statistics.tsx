@@ -85,7 +85,6 @@ const Statistics: React.FC<StatisticsProps> = ({
         const svg = d3.select(svgRef.current);
         svg.selectAll('*').remove();
 
-        // 📌 Tooltip 容器
         if (!tooltipRef.current) {
             tooltipRef.current = d3
                 .select('body')
@@ -337,8 +336,8 @@ const Statistics: React.FC<StatisticsProps> = ({
                                 tooltip
                                     .html(
                                         `
-                                    <div style="font-weight: bold; margin-bottom: 4px; color: #333;">${d.category}</div>
-                                    <div style="color: #666;">数量: ${d.count} 篇</div>
+                                    <div style="font-weight: bold; margin-bottom: 4px; color: #fff;">${d.category}</div>
+                                    <div style="color: #fff;">数量: ${d.count} 篇</div>
                                 `,
                                     )
                                     .style('visibility', 'visible')

@@ -15,7 +15,8 @@ import vispubsData from '../../public/data/vispubs.json';
 const { Content } = Layout;
 
 // 1. 数据预处理：清理和规范化所有数据
-const allPapers = vispubsData.map((d: any) => ({
+const rawData = Array.isArray(vispubsData) ? vispubsData : [];
+const allPapers = rawData.map((d: any) => ({
     ...d,
     Year: parseInt(d.Year) || 0,
     AuthorNames: Array.isArray(d['AuthorNames-Dedpuped'])
@@ -25,7 +26,6 @@ const allPapers = vispubsData.map((d: any) => ({
         : [],
     date: new Date(parseInt(d.Year) || 0, 0, 1),
 }));
-
 const Index: React.FC = () => {
     // A. 全局筛选状态 (来自 Filter.tsx)
     const [globalFilters, setGlobalFilters] = useState({});
@@ -127,7 +127,6 @@ const Index: React.FC = () => {
                 <Filter
                     onFilterChange={handleFilterChange}
                     onFilterReset={handleFilterReset}
-                    allPapers={allPapers}
                 />
             </div>
 

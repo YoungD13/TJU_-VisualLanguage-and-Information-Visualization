@@ -1,4 +1,3 @@
-// Timeline.tsx
 import React, {
     useEffect,
     useRef,
@@ -180,8 +179,7 @@ const TimeLine: React.FC<TimeLineProps> = ({
                 .call(
                     d3
                         .axisBottom(x)
-                        .ticks(d3.timeYear.every(2))
-                        .tickFormat(d3.timeFormat('%Y')),
+                        .ticks(d3.timeYear.every(2), d3.timeFormat('%Y')),
                 );
 
             // 创建 Y 轴（会议）
@@ -283,10 +281,10 @@ const TimeLine: React.FC<TimeLineProps> = ({
         return d3
             .scaleTime()
             .domain(
-                d3.extent(filteredByGlobalFilters, (d) => d.date) as [
-                    Date,
-                    Date,
-                ],
+                d3.extent(
+                    filteredByGlobalFilters,
+                    (d) => d.date,
+                ) as unknown as [Date, Date],
             )
             .range([margin.left, svgRef.current.clientWidth - margin.right])
             .nice();

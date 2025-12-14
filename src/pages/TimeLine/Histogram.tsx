@@ -1,4 +1,3 @@
-// Histogram.tsx
 import React, { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 
@@ -68,8 +67,7 @@ const Histogram: React.FC<HistogramProps> = ({
             .call(
                 d3
                     .axisBottom(xScale)
-                    .ticks(d3.timeYear.every(2))
-                    .tickFormat(d3.timeFormat('%Y')),
+                    .ticks(d3.timeYear.every(2), d3.timeFormat('%Y')),
             )
             .selectAll('text')
             .style('font-size', '10px')
