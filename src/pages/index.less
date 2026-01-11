@@ -1,41 +1,6 @@
 // index.less
 .site-layout-background {
-    background: #f0f2f5; // 整体背景灰
-}
-
-// 侧边栏容器
-.filter-sider {
-    background: #fff;
-    overflow-y: auto;
-    border-right: 1px solid #e8e8e8;
-    height: 100vh;
-    position: fixed;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    z-index: 10;
-}
-
-// 主内容区域
-.dashboard-content {
-    margin-left: 300px; // 给侧边栏留出空间
-    padding: 16px;
-    height: 100vh;
-    overflow-y: hidden; // 防止整体出现滚动条
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-
-// 仪表盘网格系统 (TimeLine + Network + Statistics | Literature)
-.dashboard-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr 350px; // 左中图表 + 右侧文献列表
-    grid-template-rows: 1fr 1fr; // 上下两行
-    gap: 16px;
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
+    background: #f0f2f5;
 }
 
 // 通用卡片样式
@@ -43,15 +8,16 @@
     background: #fff;
     border-radius: 8px;
     padding: 16px;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
     display: flex;
     flex-direction: column;
     height: 100%;
     overflow: hidden;
 
     h3 {
-        margin-bottom: 12px;
+        margin: 0 0 12px 0;
         font-weight: 600;
+        font-size: 15px;
         color: #333;
         border-left: 4px solid #1890ff;
         padding-left: 10px;

@@ -60,83 +60,72 @@ const Filter: React.FC<FilterProps> = ({ onFilterChange, onFilterReset }) => {
     };
 
     return (
-        <div className="filter-container">
-            <div className="filter-item">
-                <label>标题关键词:</label>
-                <Input
-                    placeholder="请输入标题关键词"
-                    value={title || ''}
-                    onChange={(e) => setTitle(e.target.value)}
-                />
-            </div>
-            <div className="filter-item">
-                <label>作者:</label>
-                <Input
-                    placeholder="请输入作者名称"
-                    value={author || ''}
-                    onChange={(e) => setAuthor(e.target.value)}
-                />
-            </div>
-            <div className="filter-item">
-                <label>起始年份:</label>
-                <Input
-                    type="number"
-                    placeholder="例如: 2010"
-                    value={startYear || ''}
-                    onChange={(e) =>
-                        setStartYear(Number(e.target.value) || null)
-                    }
-                />
-            </div>
-            <div className="filter-item">
-                <label>截止年份:</label>
-                <Input
-                    type="number"
-                    placeholder="例如: 2023"
-                    value={endYear || ''}
-                    onChange={(e) => setEndYear(Number(e.target.value) || null)}
-                />
-            </div>
-            <div className="filter-item">
-                <label>会议:</label>
-                <Select
-                    placeholder="选择会议"
-                    value={conference || undefined}
-                    onChange={(value) => setConference(value)}
-                    style={{ width: '100%' }}
-                    allowClear
-                >
-                    {conferences.map((conf) => (
-                        <Option key={conf} value={conf}>
-                            {conf}
-                        </Option>
-                    ))}
-                </Select>
-            </div>
-            <div className="filter-item">
-                <label>奖项:</label>
-                <Select
-                    placeholder="选择奖项"
-                    value={award || undefined}
-                    onChange={(value) => setAward(value)}
-                    style={{ width: '100%' }}
-                    allowClear
-                >
-                    {awards.map((awd) => (
-                        <Option key={awd as string} value={awd as string}>
-                            {awd}
-                        </Option>
-                    ))}
-                </Select>
-            </div>
-            <div className="filter-buttons">
-                <Button type="primary" onClick={handleFilterChange}>
-                    筛选
-                </Button>
-                <Button onClick={handleReset} style={{ marginLeft: '8px' }}>
-                    重置
-                </Button>
-            </div>
+        <div
+            style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '10px',
+                alignItems: 'center',
+            }}
+        >
+            <Input
+                placeholder="标题关键词"
+                value={title || ''}
+                onChange={(e) => setTitle(e.target.value)}
+                style={{ width: 180 }}
+                allowClear
+            />
+            <Input
+                placeholder="作者姓名"
+                value={author || ''}
+                onChange={(e) => setAuthor(e.target.value)}
+                style={{ width: 150 }}
+                allowClear
+            />
+            <Select
+                placeholder="会议"
+                value={conference || undefined}
+                onChange={(value) => setConference(value)}
+                style={{ width: 140 }}
+                allowClear
+            >
+                {conferences.map((conf) => (
+                    <Option key={conf} value={conf}>
+                        {conf}
+                    </Option>
+                ))}
+            </Select>
+            <Select
+                placeholder="奖项"
+                value={award || undefined}
+                onChange={(value) => setAward(value)}
+                style={{ width: 140 }}
+                allowClear
+            >
+                {awards.map((awd) => (
+                    <Option key={awd as string} value={awd as string}>
+                        {awd}
+                    </Option>
+                ))}
+            </Select>
+            <Input
+                type="number"
+                placeholder="起始年份"
+                value={startYear || ''}
+                onChange={(e) => setStartYear(Number(e.target.value) || null)}
+                style={{ width: 110 }}
+            />
+            <Input
+                type="number"
+                placeholder="截止年份"
+                value={endYear || ''}
+                onChange={(e) => setEndYear(Number(e.target.value) || null)}
+                style={{ width: 110 }}
+            />
+            <Button type="primary" onClick={handleFilterChange}>
+                应用筛选
+            </Button>
+            <Button onClick={handleReset}>重置</Button>
         </div>
     );
 };

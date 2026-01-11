@@ -32,31 +32,72 @@ type LinkDatum = {
     papers: any[]; // 合作文章列表
 };
 
-// 预处理原始网络数据
+// 预处理原始网络数据（内置裁剪：仅保留高权重节点，减轻前端渲染压力）
 const preProcessedNetworkData = (AU_SIZE: number) => {
+    const MAX_NODES = 800; // 保留的节点上限，可根据性能再调小
     const networkDataTyped = networkData as { nodes: any[]; links: any[] };
-    // 1. 节点数据初始化：随机生成 x/y 坐标
-    const nodes: NodeDatum[] = networkDataTyped.nodes.map(
-        (d: any, i: number) => ({
-            ...d,
-            paper: d.paper || [],
-            x: (i % 10) * 100 + 100, // 固定网格布局，避免随机
-            y: Math.floor(i / 10) * 100 + 100,
-        }),
-    );
+
+    // 0. 如果数据很大，先按权重（论文数+度数）排序裁剪节点
+    let rawNodes = networkDataTyped.nodes;
+    let rawLinks = networkDataTyped.links;
+
+    if (rawNodes.length > MAX_NODES) {
+        const degreeMap = new Map<any, number>();
+        rawLinks.forEach((l: any) => {
+            degreeMap.set(l.source, (degreeMap.get(l.source) || 0) + 1);
+            degreeMap.set(l.target, (degreeMap.get(l.target) || 0) + 1);
+        });
+
+        const scoredNodes = rawNodes
+            .map((n: any) => {
+                const papersCount = Array.isArray(n.paper) ? n.paper.length : 0;
+                const degree = degreeMap.get(n.id) || 0;
+                return { n, score: papersCount + degree };
+            })
+            .sort((a, b) => b.score - a.score);
+
+        const keepNodes = scoredNodes.slice(0, MAX_NODES).map((d) => d.n);
+        const keepIds = new Set(keepNodes.map((n: any) => n.id));
+
+        rawNodes = keepNodes;
+        rawLinks = rawLinks.filter(
+            (l: any) => keepIds.has(l.source) && keepIds.has(l.target),
+        );
+    }
+
+    // 1. 节点数据初始化：随机生成初始 x/y 坐标（用于力导向模拟的起点）
+    const nodes: NodeDatum[] = rawNodes.map((d: any) => ({
+        ...d,
+        paper: d.paper || [],
+        x: Math.random() * AU_SIZE * 0.8 + AU_SIZE * 0.1, // 随机初始位置
+        y: Math.random() * AU_SIZE * 0.8 + AU_SIZE * 0.1,
+        vx: 0,
+        vy: 0,
+    }));
 
     // 2. 创建 ID 到节点的映射
     const nodeMap = new Map(nodes.map((d) => [d.id, d]));
 
     // 3. 链接数据处理：将 source/target ID 替换为实际的 NodeDatum 对象，并添加 papers 列表
-    const links: LinkDatum[] = networkDataTyped.links
+    const links: LinkDatum[] = rawLinks
         .map((d: any) => ({
             ...d,
             source: nodeMap.get(d.source),
             target: nodeMap.get(d.target),
-            papers: d.papers || [], // 假设原始数据中包含合作论文的列表
+            papers: d.papers || [],
         }))
         .filter((d: any) => d.source && d.target) as LinkDatum[];
+
+    // 4. 运行力导向模拟以计算合理的节点位置
+    const simulation = d3
+        .forceSimulation(nodes)
+        .force('link', d3.forceLink(links).distance(100).strength(0.5))
+        .force('charge', d3.forceManyBody().strength(-300))
+        .force('center', d3.forceCenter(0, 0).strength(0.1))
+        .force('collide', d3.forceCollide().radius(30))
+        .tick(300);
+
+    simulation.stop();
 
     return { nodes, links };
 };
@@ -83,6 +124,10 @@ const Network: React.FC<NetworkProps> = ({
     const AU_SIZE = 1600;
     const containerRef = useRef<HTMLDivElement>(null);
     const [enableSelection, setEnableSelection] = useState(false);
+    // 缓存一次力导向后的静态坐标，避免后续交互改变位置
+    const layoutCacheRef = useRef<
+        Map<string | number, { x: number; y: number }>
+    >(new Map());
 
     // 预加载并固定布局
     const { nodes: allNodes, links: allLinks } = useMemo(
@@ -155,9 +200,9 @@ const Network: React.FC<NetworkProps> = ({
             return false;
         });
 
-        // 如果筛选后没有节点，可能是作者名称不匹配，显示所有网络（避免空白）
-        if (filteredNodes.length === 0 && allPapers.length > 100) {
-            // 如果论文数量很多（说明筛选不严格），显示所有网络
+        // 如果筛选后节点过少（可能作者名/DOI 不匹配），退回全量显示以保持可见性
+        const minVisible = Math.max(50, Math.floor(allNodes.length * 0.05));
+        if (filteredNodes.length < minVisible) {
             return { nodes: allNodes, links: allLinks };
         }
 
@@ -204,6 +249,44 @@ const Network: React.FC<NetworkProps> = ({
         if (!containerRef.current) return;
 
         const { nodes, links } = currentNetworkData;
+
+        // 使用缓存的静态布局，保证坐标固定
+        nodes.forEach((n: any) => {
+            const cached = layoutCacheRef.current.get(n.id);
+            if (cached) {
+                n.x = cached.x;
+                n.y = cached.y;
+            }
+        });
+
+        // 性能参数 & 大图检测
+        const PERF = {
+            HEAVY_NODE: 2000,
+            HEAVY_LINK: 6000,
+            MAX_SVG_LINKS: 12000,
+        } as const;
+
+        const isHeavy =
+            nodes.length > PERF.HEAVY_NODE || links.length > PERF.HEAVY_LINK;
+
+        // 链接抽样：优先保留高权重，其余随机补齐
+        function downsampleLinks(ls: LinkDatum[], cap: number) {
+            if (ls.length <= cap) return ls;
+            const sorted = [...ls].sort((a, b) => b.value - a.value);
+            const keepTop = Math.floor(cap * 0.7);
+            const top = sorted.slice(0, keepTop);
+            const rest = sorted.slice(keepTop);
+            for (let i = rest.length - 1; i > 0; i--) {
+                const j = (Math.random() * (i + 1)) | 0;
+                [rest[i], rest[j]] = [rest[j], rest[i]];
+            }
+            const remain = cap - keepTop;
+            return top.concat(rest.slice(0, remain));
+        }
+
+        const linksToRender = isHeavy
+            ? downsampleLinks(links as any, PERF.MAX_SVG_LINKS)
+            : links;
 
         // 如果没有节点，显示提示信息
         if (nodes.length === 0) {
@@ -253,17 +336,28 @@ const Network: React.FC<NetworkProps> = ({
 
         const graph_g = auSvg.append('g').attr('id', 'graph_g');
 
-        // 📌 启用 Zoom/Pan
+        // 📌 启用 Zoom/Pan（与示例一致：滚轮缩放 + 左键拖拽；双击不缩放）
         const zoom = d3
             .zoom<SVGSVGElement, unknown>()
-            .scaleExtent([0.1, 8])
+            .scaleExtent([0.5, 10])
+            .filter((event: any) => {
+                if (enableSelection) return false;
+                if (event.type === 'wheel') return true;
+                if (event.type === 'mousedown' && event.button === 0)
+                    return true;
+                return false;
+            })
             .on('zoom', (event) => {
                 graph_g.attr('transform', event.transform);
-                // 确保 Brush 区域也随之缩放/平移，但 Brush 行为本身不应该被缩放
-                // 实际上，D3 Brush 的坐标是相对于其父元素，所以我们只对 graph_g 整体应用 transform。
             });
 
-        auSvg.call(zoom);
+        auSvg
+            .call(zoom)
+            .on('dblclick.zoom', null)
+            .call(
+                zoom.transform as any,
+                d3.zoomIdentity.translate(AU_SIZE / 2, AU_SIZE / 2),
+            );
 
         const radiusScale = d3
             .scaleSqrt()
@@ -310,49 +404,55 @@ const Network: React.FC<NetworkProps> = ({
             .attr('stop-color', '#E0E0E0')
             .attr('stop-opacity', 0.2);
 
-        // 添加阴影滤镜
-        const filter = defs
-            .append('filter')
-            .attr('id', 'nodeShadow')
-            .attr('x', '-50%')
-            .attr('y', '-50%')
-            .attr('width', '200%')
-            .attr('height', '200%');
-        filter
-            .append('feGaussianBlur')
-            .attr('in', 'SourceAlpha')
-            .attr('stdDeviation', 2);
-        filter
-            .append('feOffset')
-            .attr('dx', 1)
-            .attr('dy', 1)
-            .attr('result', 'offsetblur');
-        const feComponentTransfer = filter
-            .append('feComponentTransfer')
-            .attr('in', 'offsetblur');
-        feComponentTransfer
-            .append('feFuncA')
-            .attr('type', 'linear')
-            .attr('slope', 0.3);
-        const feMerge = filter.append('feMerge');
-        feMerge.append('feMergeNode');
-        feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
+        // 添加阴影滤镜（重图禁用以优化性能）
+        if (!isHeavy) {
+            const filter = defs
+                .append('filter')
+                .attr('id', 'nodeShadow')
+                .attr('x', '-50%')
+                .attr('y', '-50%')
+                .attr('width', '200%')
+                .attr('height', '200%');
+            filter
+                .append('feGaussianBlur')
+                .attr('in', 'SourceAlpha')
+                .attr('stdDeviation', 2);
+            filter
+                .append('feOffset')
+                .attr('dx', 1)
+                .attr('dy', 1)
+                .attr('result', 'offsetblur');
+            const feComponentTransfer = filter
+                .append('feComponentTransfer')
+                .attr('in', 'offsetblur');
+            feComponentTransfer
+                .append('feFuncA')
+                .attr('type', 'linear')
+                .attr('slope', 0.3);
+            const feMerge = filter.append('feMerge');
+            feMerge.append('feMergeNode');
+            feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
+        }
 
         // 1. 绘制连线（使用更柔和的样式）
         const linkElements = graph_g
             .append('g')
             .attr('class', 'links')
+            .attr('shape-rendering', 'optimizeSpeed')
             .selectAll('line')
-            .data(links)
+            .data(linksToRender)
             .join('line')
             .attr('stroke', '#B8B8B8')
-            .attr('stroke-opacity', 0.3)
-            .attr('stroke-width', (d) => Math.sqrt(d.value) * 0.8)
+            .attr('stroke-opacity', isHeavy ? 0.25 : 0.3)
+            .attr('stroke-width', (d) =>
+                Math.max(0.5, Math.sqrt(d.value) * (isHeavy ? 0.7 : 0.8)),
+            )
             .attr('x1', (d) => d.source.x)
             .attr('y1', (d) => d.source.y)
             .attr('x2', (d) => d.target.x)
             .attr('y2', (d) => d.target.y)
-            .style('transition', 'all 0.3s ease')
+            .style('transition', () => (isHeavy ? null : 'all 0.3s ease'))
+            .style('pointer-events', isHeavy ? 'none' : 'auto')
 
             // 📌 边悬停交互
             .on('mouseover', function (event, d) {
@@ -371,9 +471,15 @@ const Network: React.FC<NetworkProps> = ({
             .on('mouseout', function (event, d) {
                 // 恢复默认颜色，但如果高亮，保持高亮
                 const linkData = d as LinkDatum;
-                const isHighlighted = highlightedPapers.some((p) =>
-                    linkData.papers.some((lp) => isSamePaper(lp, p)),
-                );
+                // 同时兼容 DOI 字符串与论文对象
+                const isHighlighted = highlightedPapers.some((p) => {
+                    const paperId = getPaperId(p);
+                    return linkData.papers.some((lp: any) => {
+                        if (typeof lp === 'string')
+                            return lp === paperId || lp === p.DOI;
+                        return isSamePaper(lp, p);
+                    });
+                });
                 d3.select(this)
                     .attr('stroke', isHighlighted ? '#FFD700' : '#B8B8B8')
                     .attr('stroke-opacity', isHighlighted ? 0.7 : 0.3)
@@ -387,6 +493,8 @@ const Network: React.FC<NetworkProps> = ({
             })
             // 📌 边点击交互: 筛选出该边合作的论文列表
             .on('click', function (event, d) {
+                event.stopPropagation();
+                if (enableSelection) return; // 框选时禁用边点击
                 // 设置高亮和详情
                 onLiteratureClick(
                     d.papers,
@@ -398,6 +506,7 @@ const Network: React.FC<NetworkProps> = ({
         const nodeElements = graph_g
             .append('g')
             .attr('class', 'nodes')
+            .attr('shape-rendering', 'optimizeSpeed')
             .selectAll('circle')
             .data(nodes)
             .join('circle')
@@ -405,8 +514,8 @@ const Network: React.FC<NetworkProps> = ({
             .attr('cy', (d) => d.y)
             .attr('r', (d) => radiusScale(d.paper.length))
             .attr('fill', (d) => colorScale(d.paper.length))
-            .attr('opacity', 0.85)
-            .attr('filter', 'url(#nodeShadow)')
+            .attr('opacity', 0.9)
+            .attr('filter', isHeavy ? null : 'url(#nodeShadow)')
             .style('cursor', 'pointer')
             .style('transition', 'all 0.2s ease')
 
@@ -490,6 +599,14 @@ const Network: React.FC<NetworkProps> = ({
                     .attr('r', radiusScale(d.paper.length) * 1.2);
             });
 
+        // 2.1 布局固定：若缓存缺失则保证有基础坐标
+        nodes.forEach((n: any) => {
+            if (!Number.isFinite(n.x) || !Number.isFinite(n.y)) {
+                n.x = AU_SIZE / 2 + (Math.random() - 0.5) * AU_SIZE * 0.4;
+                n.y = AU_SIZE / 2 + (Math.random() - 0.5) * AU_SIZE * 0.4;
+            }
+        });
+
         // 3. 实时更新高亮状态
         const updateHighlights = () => {
             // 节点高亮
@@ -556,7 +673,34 @@ const Network: React.FC<NetworkProps> = ({
         const brushGroup = auSvg
             .append('g')
             .attr('class', 'brush')
-            .style('pointer-events', enableSelection ? 'all' : 'none');
+            .style('pointer-events', enableSelection ? 'all' : 'none')
+            .style('cursor', enableSelection ? 'crosshair' : '');
+
+        // 实时预览：在 brush 过程中高亮当前框内节点
+        const highlightBox = (
+            minX: number,
+            maxX: number,
+            minY: number,
+            maxY: number,
+        ) => {
+            nodeElements
+                .attr('stroke', null)
+                .attr('stroke-width', 0)
+                .attr('opacity', 0.85)
+                .attr('r', (d) => radiusScale(d.paper.length));
+            nodeElements
+                .filter(
+                    (d) =>
+                        minX <= d.x &&
+                        d.x <= maxX &&
+                        minY <= d.y &&
+                        d.y <= maxY,
+                )
+                .attr('stroke', '#FF6B6B')
+                .attr('stroke-width', 4)
+                .attr('opacity', 1)
+                .attr('r', (d) => radiusScale(d.paper.length) * 1.15);
+        };
 
         const brush = d3
             .brush()
@@ -564,11 +708,22 @@ const Network: React.FC<NetworkProps> = ({
                 [0, 0],
                 [AU_SIZE, AU_SIZE],
             ])
-            .on('start', function (event) {
-                // 框选开始时，暂时禁用 zoom
-                if (enableSelection) {
-                    auSvg.on('.zoom', null);
-                }
+            .on('start', function () {
+                // 框选时暂时禁用缩放
+                auSvg.on('.zoom', null);
+            })
+            .on('brush', function (event) {
+                if (!enableSelection || !event.selection) return;
+                const [[x0, y0], [x1, y1]] = event.selection as [
+                    [number, number],
+                    [number, number],
+                ];
+                const t = d3.zoomTransform(auSvg.node() as Element);
+                const minX = Math.min((x0 - t.x) / t.k, (x1 - t.x) / t.k);
+                const maxX = Math.max((x0 - t.x) / t.k, (x1 - t.x) / t.k);
+                const minY = Math.min((y0 - t.y) / t.k, (y1 - t.y) / t.k);
+                const maxY = Math.max((y0 - t.y) / t.k, (y1 - t.y) / t.k);
+                highlightBox(minX, maxX, minY, maxY);
             })
             .on('end', function (event) {
                 if (!enableSelection) {
@@ -582,6 +737,12 @@ const Network: React.FC<NetworkProps> = ({
 
                 if (!event.selection) {
                     onLiteratureFilter([]);
+                    // 清除预览高亮
+                    nodeElements
+                        .attr('stroke', null)
+                        .attr('stroke-width', 0)
+                        .attr('opacity', 0.85)
+                        .attr('r', (d) => radiusScale(d.paper.length));
                     return;
                 }
 
@@ -626,34 +787,23 @@ const Network: React.FC<NetworkProps> = ({
                 });
                 onLiteratureFilter(selectedPapers);
 
-                // 2. 高亮选中的节点 (边不变)
-                nodeElements
-                    .attr('stroke', null)
-                    .attr('stroke-width', 0)
-                    .attr('opacity', 0.85)
-                    .attr('r', (d) => radiusScale(d.paper.length));
-                nodeElements
-                    .filter(
-                        (d) =>
-                            minX <= d.x &&
-                            d.x <= maxX &&
-                            minY <= d.y &&
-                            d.y <= maxY,
-                    )
-                    .attr('stroke', '#FF6B6B')
-                    .attr('stroke-width', 4)
-                    .attr('opacity', 1)
-                    .attr('r', (d) => radiusScale(d.paper.length) * 1.15);
+                // 2. 高亮选中的节点 (边不变) - 复用实时预览逻辑
+                highlightBox(minX, maxX, minY, maxY);
             });
 
         brushGroup.call(brush);
 
         // 控制 Brush 交互
         if (!enableSelection) {
-            brushGroup.call(brush.move, null).style('pointer-events', 'none');
+            brushGroup
+                .call(brush.move, null)
+                .style('pointer-events', 'none')
+                .style('cursor', '');
             nodeElements.attr('stroke', null).attr('stroke-width', 0); // 清除选中/框选
         } else {
-            brushGroup.style('pointer-events', 'all');
+            brushGroup
+                .style('pointer-events', 'all')
+                .style('cursor', 'crosshair');
             nodeElements.attr('stroke', null).attr('stroke-width', 0); // 确保启用框选时清除点击高亮
         }
     }, [

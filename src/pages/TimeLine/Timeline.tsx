@@ -12,7 +12,17 @@ import Histogram from './Histogram';
 import { Switch, Alert } from 'antd';
 
 // 定义数据类型
-type LiteratureNode = any;
+interface LiteratureNode {
+    Year: number;
+    date: Date;
+    Conference?: string;
+    Award?: string;
+    Title?: string;
+    PaperId?: string;
+    DOI?: string;
+    ['AuthorNames-Dedpuped']?: string[];
+    [key: string]: any;
+}
 
 interface TimeLineProps {
     globalFilters?: any; // 来自index.tsx的全局筛选
@@ -50,8 +60,9 @@ const TimeLine: React.FC<TimeLineProps> = ({
     // 优先使用 allPapers（来自 index.tsx），如果没有则使用 s1Data.nodes
     const dataSource = allPapers || s1Data?.nodes || [];
 
-    const filteredByGlobalFilters = useMemo(() => {
-        if (!dataSource || dataSource.length === 0) return [];
+    const filteredByGlobalFilters: LiteratureNode[] = useMemo(() => {
+        if (!dataSource || dataSource.length === 0)
+            return [] as LiteratureNode[];
         return dataSource
             .filter((d: any) => {
                 const year = parseInt(d.Year);
@@ -110,10 +121,13 @@ const TimeLine: React.FC<TimeLineProps> = ({
         let nodes = filteredByGlobalFilters;
 
         if (selectedYear) {
-            nodes = nodes.filter((d) => d.Year === selectedYear);
+            nodes = nodes.filter(
+                (d: { Year: number }) => d.Year === selectedYear,
+            );
         } else if (startYear && endYear) {
             nodes = nodes.filter(
-                (d) => d.Year >= startYear && d.Year <= endYear,
+                (d: { Year: number }) =>
+                    d.Year >= startYear && d.Year <= endYear,
             );
         }
 
@@ -145,7 +159,7 @@ const TimeLine: React.FC<TimeLineProps> = ({
     // 4. D3 绘图逻辑
     const drawTimeLine = useCallback(
         (data: LiteratureNode[]) => {
-            if (!svgRef.current || data.length === 0) return;
+            if (!svgRef.current || data.length === 0 || showHistogram) return;
 
             const svg = d3.select(svgRef.current);
             svg.selectAll('*').remove();
@@ -254,14 +268,18 @@ const TimeLine: React.FC<TimeLineProps> = ({
 
             svg.append('g').attr('class', 'brush').call(brush);
         },
-        [margin, highlightedPaperIds, onLiteratureClick],
+        [margin, highlightedPaperIds, onLiteratureClick, showHistogram],
     );
 
     useEffect(() => {
         if (filteredByGlobalFilters.length > 0) {
             drawTimeLine(filteredByGlobalFilters);
         }
-    }, [filteredByGlobalFilters, drawTimeLine]);
+        // 当切换到直方图时清空散点图区域
+        if (showHistogram && svgRef.current) {
+            d3.select(svgRef.current).selectAll('*').remove();
+        }
+    }, [filteredByGlobalFilters, drawTimeLine, showHistogram]);
 
     // 直方图数据准备和比例尺创建
     const histogramData = useMemo(() => {
@@ -270,7 +288,7 @@ const TimeLine: React.FC<TimeLineProps> = ({
         const yearCounts = d3.rollup(
             filteredByGlobalFilters,
             (v) => v.length,
-            (d) => d.Year,
+            (d: any) => d.Year,
         );
         return Array.from(yearCounts, ([year, count]) => ({ year, count }));
     }, [filteredByGlobalFilters]);
@@ -328,8 +346,8 @@ const TimeLine: React.FC<TimeLineProps> = ({
                     ref={svgRef}
                     style={{
                         width: '100%',
-                        height: showHistogram ? 'calc(100% - 108px)' : '100%',
-                        display: 'block',
+                        height: showHistogram ? 0 : '100%',
+                        display: showHistogram ? 'none' : 'block',
                     }}
                 />
             </div>
